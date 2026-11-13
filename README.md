@@ -7,7 +7,7 @@ A standalone native Android teaching aid for learner drivers in a manual car. Ko
 ## First version
 
 - High-contrast dashboard: RPM, mph, load, estimated gear, calm advisory coaching, connection/source status.
-- Default simulation: seven scenarios plus adjustable RPM, speed, load and clutch uncertainty.
+- Default simulation: eight scenarios plus adjustable RPM, speed, load and clutch uncertainty, including second-to-first slow progress.
 - Beginner, Intermediate and Independent modes; sensitivity and prompt interval settings.
 - Optional offline Android Text-to-Speech (off by default), voice volume and repeat suppression.
 - Local settings and vehicle-specific ratio capture. No unverified Fiesta transmission ratios.
@@ -61,7 +61,7 @@ Or select one device using `ANDROID_SERIAL` and run `:app:connectedDebugAndroidT
 
 App launch always starts simulation, including after a process restart; live activation is never saved. The amber **SIMULATED DATA** banner and demo-ratio description identify the source. In Simulator select Moving away, Through the gears, Steady at 30 mph, Slowing for a junction, Approaching a stop, Low RPM/high load, or Clutch disengaged. Sliders switch to manual sensor control. Speed changes provide acceleration/deceleration input. Gear is derived from these readings, not a forced gear value.
 
-Simulation fixture ratios are educational values, not Ford specifications, and are never written into vehicle calibration. A changed gear takes at least 1.5 seconds of a stable matching ratio. At very low speed, stopped, clutch disengaged, stale/unsynchronised readings or no confident ratio match, gear is **Unknown**. Stationary first gear is never claimed.
+Simulation fixture ratios are educational values, not Ford specifications, and are never written into vehicle calibration. A changed gear takes at least 1.5 seconds of a stable matching ratio. At very low speed, stopped, clutch disengaged, stale/unsynchronised readings or no confident ratio match, gear is **Unknown**. Stationary first gear is never claimed. The **Second to first · slow progress** scenario slows in second and holds approximately 7 mph / 900 RPM so the conditional first-gear prompt can be demonstrated.
 
 ## SWOBD3 reader procedure — physical verification outstanding
 
@@ -99,7 +99,11 @@ Live ratios start empty. Capture each known forward gear from at least five seco
 
 OBD does not provide a clutch or neutral sensor here. Ratio matching and instability checks suppress uncertain estimates but cannot prove clutch engagement or reliably detect every neutral/clutch situation. Gears below 10 km/h are always Unknown. Samples spanning more than 1.5 seconds are treated as unsynchronised; readings older than 2.5 seconds are removed.
 
-Coaching considers RPM, speed, calibrated gear, load and acceleration trend, with stable-candidate dwell, minimum intervals and duplicate suppression. High load or deceleration suppress upshifts; low RPM plus load can suggest a lower gear. Missing load suppresses gear-change suggestions. Sensitivity values are teaching defaults, not validated Fiesta shift points. The app cannot sense gradients, hazards, junctions or intentions. Audio is optional, offline-voice only, off by default; install a UK English offline TTS voice if necessary. No frequent forced gear commands are issued.
+Coaching considers RPM, speed, calibrated gear, load and acceleration trend, with stable-candidate dwell, minimum intervals and duplicate suppression. High load or deceleration suppress upshifts; low RPM plus load can suggest a lower gear. General gear-change suggestions require load data.
+
+For second-to-first slow progress, **Consider first gear if continuing** is conditional on valid first/second calibration, a plausible second-gear RPM/speed ratio, low RPM, slow stable/decelerating progress and a modest predicted RPM in first. This does not require high load, so slowing gently can trigger it. Software teaching bounds are 8–12 km/h, at least 800 RPM, at most the configured downshift RPM, and predicted first-gear RPM 900–1800. These are conservative demonstration bounds, not verified Ford shift recommendations. The ratio and trend must remain plausible throughout the 3-second beginner / 5-second intermediate dwell. Below the gear estimator's 10 km/h floor, a confirmed second gear may support the conditional prompt for at most four seconds; the displayed selected gear stays Unknown. Missing first calibration, expired history, ratio mismatch, stale/asynchronous data, clutch uncertainty, acceleration or substantial braking suppress the prompt. Stationary coaching remains Prepare for moving off and does not claim an engaged gear. Independent mode suppresses assistance. If stopping, the instructor's stopping routine takes precedence.
+
+Sensitivity values are teaching defaults, not validated Fiesta shift points. The app cannot sense gradients, hazards, junctions or intentions. Audio is optional, offline-voice only, off by default; install a UK English offline TTS voice if necessary. No frequent forced gear commands are issued.
 
 ## Tests and troubleshooting
 

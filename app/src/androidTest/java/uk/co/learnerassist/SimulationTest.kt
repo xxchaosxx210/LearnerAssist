@@ -56,4 +56,14 @@ class SimulationTest {
         }
         compose.onNodeWithText("SIMULATED DATA").assertExists()
     }
+    @Test fun secondToFirstScenarioShowsConditionalPrompt() {
+        compose.onNodeWithText("Simulator", useUnmergedTree = true).performClick()
+        compose.onNodeWithText("Second to first · slow progress").performScrollTo().performClick()
+        compose.onNodeWithText("Drive", useUnmergedTree = true).performClick()
+        compose.waitUntil(timeoutMillis = 20000) {
+            compose.onAllNodesWithText("Consider first gear if continuing").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithText("SIMULATED DATA").assertExists()
+        compose.onNodeWithText("2").assertExists()
+    }
 }

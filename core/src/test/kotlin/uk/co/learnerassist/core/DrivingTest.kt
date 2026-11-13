@@ -86,4 +86,83 @@ class DrivingTest {
             }
         }
     }
+    @Test fun `slow progress in second suggests first without high engine load`() {
+        val coach = Coach()
+        val results = (0..12).map { t ->
+            coach.advise(reading(t * 500L, 897.0, 11.5).copy(load = 15.0), 2, calibration, CoachingConfig(), t * 500L)
+        }
+        assertFalse(results.take(6).contains(Advice.FIRST))
+        assertTrue(results.contains(Advice.FIRST))
+    }
+    @Test fun `recent second can support conditional advice without claiming a low speed gear`() {
+        val ratios = Calibration(mapOf(1 to 150.0, 2 to 100.0, 3 to 70.0))
+        val estimator = GearEstimator()
+        val coach = Coach()
+        for (t in 0..4) {
+            val r = reading(t * 500L, 1000.0, 10.0)
+            val gear = estimator.estimate(r, ratios, r.timestampMs)
+            coach.advise(r, gear, ratios, CoachingConfig(), r.timestampMs)
+        }
+        val results = (1..8).map { t ->
+            val r = reading(2000 + t * 500L, 980.0, 9.8)
+            val gear = estimator.estimate(r, ratios, r.timestampMs)
+            assertNull(gear)
+            coach.advise(r, gear, ratios, CoachingConfig(), r.timestampMs)
+        }
+        assertTrue(results.contains(Advice.FIRST))
+        val expired = reading(6500, 980.0, 9.8)
+        assertEquals(Advice.UNKNOWN, coach.advise(expired, null, ratios, CoachingConfig(), 6500))
+    }
+    @Test fun `first advice is suppressed with no confirmed second or mismatching ratio`() {
+        for (gear in listOf(null, 3)) {
+            val coach = Coach()
+            val results = (0..12).map { t -> coach.advise(reading(t * 500L, 897.0, 11.5), gear, calibration, CoachingConfig(), t * 500L) }
+            assertFalse(results.contains(Advice.FIRST))
+        }
+        val coach = Coach()
+        coach.advise(reading(0, 897.0, 11.5), 2, calibration, CoachingConfig(), 0)
+        for (t in 1..12) assertNotEquals(Advice.FIRST,
+            coach.advise(reading(t * 500L, 1200.0, 9.0), null, calibration, CoachingConfig(), t * 500L))
+    }
+    @Test fun `first advice requires both calibrated gears and a modest predicted first rpm`() {
+        for (ratios in listOf(Calibration(mapOf(2 to 78.0, 3 to 53.0)), Calibration(mapOf(1 to 250.0, 2 to 78.0)))) {
+            val coach = Coach()
+            val results = (0..12).map { t -> coach.advise(reading(t * 500L, 897.0, 11.5), 2, ratios, CoachingConfig(), t * 500L) }
+            assertFalse(results.contains(Advice.FIRST))
+        }
+    }
+    @Test fun `first advice is suppressed during acceleration braking clutch uncertainty or independent mode`() {
+        for (kind in 0..3) {
+            val coach = Coach()
+            val results = (0..12).map { t ->
+                val speed = when (kind) { 0 -> 8.0 + t * 0.35; 1 -> 40.0 - t * 3; else -> 11.5 }
+                val r = reading(t * 500L, speed * 78, speed).copy(clutchDisengaged = kind == 2)
+                coach.advise(r, 2, calibration, CoachingConfig(mode = if (kind == 3) DrivingMode.INDEPENDENT else DrivingMode.BEGINNER), t * 500L)
+            }
+            assertFalse(results.contains(Advice.FIRST))
+        }
+    }
+    @Test fun `uncertain interval restarts first suggestion dwell`() {
+        val coach = Coach()
+        for (t in 0..4) coach.advise(reading(t * 500L, 897.0, 11.5), 2, calibration, CoachingConfig(), t * 500L)
+        coach.advise(reading(2500, 897.0, 11.5).copy(synchronized = false), null, calibration, CoachingConfig(), 2500)
+        for (t in 6..12) assertNotEquals(Advice.FIRST,
+            coach.advise(reading(t * 500L, 897.0, 11.5), 2, calibration, CoachingConfig(), t * 500L))
+        assertEquals(Advice.FIRST, coach.advise(reading(6500, 897.0, 11.5), 2, calibration, CoachingConfig(), 6500))
+    }
+    @Test fun `first suggestion does not repeat while same conditions continue`() {
+        val coach = Coach()
+        val results = (0..60).map { t -> coach.advise(reading(t * 500L, 897.0, 11.5), 2, calibration, CoachingConfig(), t * 500L) }
+        assertTrue(results.contains(Advice.FIRST))
+        assertFalse(results.drop(16).contains(Advice.FIRST))
+    }
+    @Test fun `second to first simulator exercises the full estimator and coach`() {
+        val estimator = GearEstimator()
+        val coach = Coach()
+        val results = (0..40).map { t ->
+            val r = Simulator.sample(Scenario.SECOND_TO_FIRST, t / 2.0, t * 500L)
+            coach.advise(r, estimator.estimate(r, calibration, r.timestampMs), calibration, CoachingConfig(), r.timestampMs)
+        }
+        assertTrue(results.contains(Advice.FIRST))
+    }
 }

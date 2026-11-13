@@ -113,6 +113,7 @@ private fun LearnerAssist(state: DashboardState, model: DashboardViewModel, conn
             Text("${s.settings.coaching.mode.name.lowercase().replaceFirstChar { it.uppercase() }} coaching", style = MaterialTheme.typography.labelLarge)
             Spacer(Modifier.height(8.dp))
             Text(s.advice.text, style = MaterialTheme.typography.headlineSmall)
+            if (s.advice == Advice.FIRST) Text("For very slow progress if continuing. If stopping, follow your instructor's stopping routine.", style = MaterialTheme.typography.bodyMedium)
             Text(if (s.simulation) "Demonstration gear ratios · not your vehicle calibration" else "Estimated from calibrated RPM / speed. Clutch and neutral are not directly sensed.", style = MaterialTheme.typography.bodySmall)
         }
     }

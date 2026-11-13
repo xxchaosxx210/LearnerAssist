@@ -12,7 +12,7 @@ class AudioCoach(context: Context) {
     private var lastTime = 0L
     private val tts = TextToSpeech(context) { status -> ready = status == TextToSpeech.SUCCESS }
     fun speak(advice: Advice, settings: Settings, now: Long) {
-        if (!settings.audio || !ready || advice !in setOf(Advice.UP, Advice.DOWN, Advice.PREPARE) ||
+        if (!settings.audio || !ready || advice !in setOf(Advice.UP, Advice.DOWN, Advice.FIRST, Advice.PREPARE) ||
             now - lastTime < settings.coaching.intervalSeconds * 1000L || advice == last) return
         val result = tts.setLanguage(Locale.UK)
         if (result < 0 || tts.voice?.isNetworkConnectionRequired == true) return
