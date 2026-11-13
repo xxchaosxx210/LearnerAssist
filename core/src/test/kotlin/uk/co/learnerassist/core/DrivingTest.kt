@@ -192,7 +192,7 @@ class DrivingTest {
             baseline.mapIndexed { i, r -> if (i == 5) r.copy(rpm = 1300.0) else r },
             baseline.mapIndexed { i, r -> if (i == 5) r.copy(clutchDisengaged = true) else r },
             baseline.mapIndexed { i, r -> if (i == 5) r.copy(synchronized = false) else r },
-            baseline.mapIndexed { i, r -> if (i == 5) r.copy(kmh = 10.0, rpm = 1200.0) else r },
+            baseline.mapIndexed { i, r -> if (i == 5) r.copy(kmh = 14.0, rpm = 1680.0) else r },
         )
         variations.forEach { assertFalse(CalibrationCapture.assess(it, 5000, Source.LIVE, 1).ready) }
     }
@@ -212,5 +212,39 @@ class DrivingTest {
     @Test fun `old manoeuvres stop blocking capture after a new stable window`() {
         val older = firstSamples().map { it.copy(timestampMs = it.timestampMs - 10000, kmh = 0.0) }
         assertTrue(CalibrationCapture.assess(older + firstSamples(), 5000, Source.LIVE, 1).ready)
+    }
+    @Test fun `first gear captures gentle progress from five to seven mph`() {
+        val moving = samples().mapIndexed { i, r ->
+            val trueKmh = 8.0 + i * 0.3
+            r.copy(kmh = kotlin.math.round(trueKmh), rpm = trueKmh * 120)
+        }
+        val assessment = CalibrationCapture.assess(moving, 5000, Source.LIVE, 1)
+        assertTrue(assessment.message, assessment.ready)
+        assertEquals(120.0, assessment.ratio!!, 3.0)
+    }
+    @Test fun `one kmh reporting steps do not reject consistent first gear ratios`() {
+        val quantised = samples().mapIndexed { i, r ->
+            val trueKmh = if (i % 2 == 0) 8.49 else 8.51
+            r.copy(kmh = kotlin.math.round(trueKmh), rpm = trueKmh * 120)
+        }
+        val assessment = CalibrationCapture.assess(quantised, 5000, Source.LIVE, 1)
+        assertTrue(assessment.message, assessment.ready)
+        assertEquals(120.0, assessment.ratio!!, 1.0)
+    }
+    @Test fun `broader first speed window still rejects slipping ratios`() {
+        val slipping = samples().mapIndexed { i, r ->
+            val kmh = 8.0 + (i / 4)
+            r.copy(kmh = kmh, rpm = kmh * if (i < 5) 120 else 170)
+        }
+        assertFalse(CalibrationCapture.assess(slipping, 5000, Source.LIVE, 1).ready)
+    }
+    @Test fun `other gears retain the existing speed and ratio stability limits`() {
+        val varying = samples().mapIndexed { i, r ->
+            val kmh = 15.0 + i * 0.4
+            r.copy(kmh = kmh, rpm = kmh * 78)
+        }
+        assertFalse(CalibrationCapture.assess(varying, 5000, Source.LIVE, 2).ready)
+        val unstable = samples().mapIndexed { i, r -> if (i == 5) r.copy(rpm = r.rpm!! * 1.05) else r }
+        assertFalse(CalibrationCapture.assess(unstable, 5000, Source.LIVE, 3).ready)
     }
 }

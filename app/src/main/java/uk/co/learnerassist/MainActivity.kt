@@ -180,6 +180,10 @@ private fun LearnerAssist(state: DashboardState, model: DashboardViewModel, conn
     Toggle("Save readings locally for review", settings.logging) { model.updateSettings(settings.copy(logging = it)) }
     Text("Logging is off by default. No location or account is collected. Local log is capped at approximately 1 MB; oldest data is cleared at the cap.")
     Text("Gear calibration", style = MaterialTheme.typography.titleLarge)
+    Text(if (s.simulation) "Simulation is on — live calibration is unavailable"
+        else if (!s.running) "Reader disconnected — reconnect on Drive"
+        else "Live readings: ${s.reading?.mph?.let { "%.1f mph".format(Locale.UK, it) } ?: "Waiting for speed"} · ${s.reading?.rpm?.let { "%.0f rpm".format(Locale.UK, it) } ?: "Waiting for RPM"}",
+        color = MaterialTheme.colorScheme.primary)
     Text("Instructor/passenger operation only. Confirm the known gear and keep the clutch fully engaged for at least 5 seconds of steady readings. First gear can be captured from 5 mph; gears 2–6 from 9.3 mph. These are measurement limits, not instructions to drive at a particular speed. Do not force a manoeuvre to meet them.")
     Text("No Ford ratios are assumed. Capture first and second for second-to-first coaching; at least two distinct gears are needed for estimation. Stationary capture is unavailable. OBD cannot independently confirm clutch engagement or the selected gear.")
     (1..6).forEach { gear ->

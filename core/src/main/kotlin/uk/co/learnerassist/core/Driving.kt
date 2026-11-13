@@ -66,16 +66,35 @@ object CalibrationCapture {
             return waiting(if (gear == 1) "First gear needs steady readings at 5 mph or more, clutch fully engaged"
                 else "This gear needs steady readings at 9.3 mph or more, clutch fully engaged")
         val speeds = window.map { it.kmh!! }
-        if (speeds.max() - speeds.min() > if (gear == 1) 1.0 else 3.0)
-            return waiting("Speed is changing; wait for steady progress")
+        if (speeds.max() - speeds.min() > if (gear == 1) 4.0 else 3.0)
+            return waiting("Speed is changing too much; waiting for gentler progress")
         val ratios = window.map { it.rpm!! / it.kmh!! }.sorted()
         val median = ratios[ratios.size / 2]
-        if (median !in 10.0..300.0 || ratios.any { abs(it - median) / median > 0.035 })
+        // PID 0D reports whole km/h. Near 5 mph, a half-step alone is about 6%
+        // of speed: a flat percentage test rejects a consistent engaged gear.
+        // Keep the 3.5% RPM tolerance and add only the speed quantisation term.
+        val fittedRatio = if (gear == 1) {
+            // Find the common ratio range consistent with every sample's bounded
+            // sensor error, then fit RPM against speed within that range. A raw
+            // median can be biased when speed alternates between adjacent integers.
+            val lower = window.maxOf { it.rpm!! / (it.kmh!! * 1.035 + 0.5) }
+            val upper = window.minOf { it.rpm!! / (it.kmh!! * 0.965 - 0.5) }
+            if (lower > upper) return waiting("RPM and speed do not form a stable ratio")
+            val fitted = window.sumOf { it.rpm!! * it.kmh!! } / window.sumOf { it.kmh!! * it.kmh!! }
+            fitted.coerceIn(lower, upper)
+        } else median
+        val unstable = window.any { sample ->
+            val rpm = sample.rpm!!
+            val predictedRpm = fittedRatio * sample.kmh!!
+            val speedStepAllowance = if (gear == 1) fittedRatio * 0.5 else 0.0
+            abs(rpm - predictedRpm) > predictedRpm * 0.035 + speedStepAllowance
+        }
+        if (fittedRatio !in 10.0..300.0 || unstable)
             return waiting("RPM and speed do not form a stable ratio")
         val elapsed = last.timestampMs - window.first().timestampMs
         if (window.size < 6 || elapsed < 5000)
             return waiting("Collecting steady readings: ${elapsed.coerceAtLeast(0) / 1000}/5 seconds")
-        return CalibrationReadiness("Ready — confirm the known gear and fully engaged clutch", median)
+        return CalibrationReadiness("Ready — confirm the known gear and fully engaged clutch", fittedRatio)
     }
     /** RPM per km/h; measured values, never factory ratios. */
     fun capture(samples: List<Reading>, nowMs: Long, source: Source, gear: Int): Double? =
