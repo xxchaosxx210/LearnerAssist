@@ -65,6 +65,8 @@ Simulation fixture ratios are educational values, not Ford specifications, and a
 
 ## SWOBD3 reader procedure — physical verification outstanding
 
+**Observed on the user's physical reader, 13 November 2026:** SSID `WIFI_OBDII` (case-sensitive), gateway/adapter `192.168.0.10`, TCP port `35000`. A socket explicitly bound to the Pixel's reader Wi-Fi connected successfully, and the centrally allowlisted `ATI` request returned `ELM327 v1.5`. These connection details were saved on the Pixel. This confirms a responding ELM interface, not firmware authenticity, full setup compatibility or valid ECU sensor data. New installations still use blank endpoint defaults; do not assume all readers share this endpoint. Sensor monitoring/calibration remains outstanding.
+
 Source: [Streetwize SWOBD3 manual (2022)](https://www.streetwizeaccessories.com/files/e54f56c5-910c-4a30-a9eb-aee700f2c4dc/SWOBD3-Manual%20AW%202022.pdf), pages 4–6. It specifies Wi-Fi SSID `WiFi_OBDII` and standard OBD-II protocols including CAN, ISO9141-2, KWP and J1850. It lists Scan Master ELM among compatible software. **It does not document an IP address, port, exact ELM firmware/version, socket protocol or detailed command compatibility.** ELM compatibility is plausible, not physically verified. Obtain verified connection parameters from the actual device/support; the app deliberately ships blank IP/port fields.
 
 1. With an authorised operator present and the vehicle switched off, insert the reader as directed by its manual. Power it by switching the vehicle on according to the manual, in a suitable safe location.
@@ -74,7 +76,7 @@ Source: [Streetwize SWOBD3 manual (2022)](https://www.streetwizeaccessories.com/
 5. App queries adapter identity, checks minimal temporary setup replies and discovers sensor support. Only then does it poll RPM/speed and optional load. An incompatible adapter fails closed.
 6. Disconnect with the button. Backgrounding/closing the app also closes the connection and cancels reconnection. Returning to foreground requires a new deliberate connection. No boot receiver or background reader service exists.
 
-No physical adapter or vehicle testing has been performed. Do not interpret a successful Android simulation test as validation of reader compatibility, protocol negotiation, actual ECU values, or safe coaching in lessons.
+Physical testing has so far verified only the adapter TCP endpoint and its reported identity. Do not interpret successful Android simulation tests or adapter identification as validation of protocol negotiation, actual ECU values, or safe coaching in lessons.
 
 ## Read-only safety architecture
 
@@ -92,6 +94,8 @@ Approved interface commands: `ATI` (identify), `ATE0` (echo off), `ATL0` (linefe
 There is no diagnostic text input/console. Endpoint fields cannot become commands. Only approved Mode 01 requests are available: no clear codes, freeze-frame erasure, ECU reset, UDS security access/writes, coding, actuator control or programming paths. Strict response lengths/PIDs, prompt limit, read and overall deadlines, EOF handling and connection poisoning prevent late fragments being reused as fresh data. Disagreeing ECU responses fail closed.
 
 Unit tests use byte streams and typed fake sessions, never physical sockets. Real access requires changing mode, pressing Connect, confirming the dialog and granting system permissions. Reconnect is capped at two retries during that one foreground activation; no automatic discovery-to-connect path exists. Command validation reduces software risks but cannot guarantee every hardware/firmware implementation behaves correctly.
+
+The Android test APK also contains `ReaderEndpointProbe`, a manual diagnostic which is skipped unless explicitly enabled with `readerProbe=true` and an explicitly supplied reader/phone IP. It checks a small bounded set of ports on that one device through its Wi-Fi-specific socket. Optional `readerIdentity=true` sends only `SafeCommand.IDENTITY` through the central encoder; it never polls ECU data. Saving a confirmed endpoint additionally requires `saveReaderEndpoint=true` and the observed `readerSsid`. Ordinary test execution supplies none of these flags and cannot activate discovery. On this Pixel, shell netcat checks followed cellular routing even with a Wi-Fi source address; their timeouts did not establish port availability. Wi-Fi-bound socket testing resolved this without redirecting the phone's internet traffic.
 
 ## Calibration and coaching
 
