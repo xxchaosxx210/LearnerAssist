@@ -38,15 +38,15 @@ class DrivingTest {
     }
     private fun samples() = (0..10).map { reading(it * 500L).copy(source = Source.LIVE) }
     @Test fun `calibration captures stable known gear over five seconds`() {
-        assertEquals(53.0, CalibrationCapture.capture(samples(), 5000, Source.LIVE)!!, 0.001)
+        assertEquals(53.0, CalibrationCapture.capture(samples(), 5000, Source.LIVE, 3)!!, 0.001)
     }
     @Test fun `calibration rejects insufficient unstable stale mixed or clutch samples`() {
-        assertNull(CalibrationCapture.capture(samples().take(4), 5000, Source.LIVE))
-        assertNull(CalibrationCapture.capture(samples(), 9000, Source.LIVE))
-        assertNull(CalibrationCapture.capture(samples().map { it.copy(kmh = 5.0) }, 5000, Source.LIVE))
-        assertNull(CalibrationCapture.capture(samples().mapIndexed { i, r -> if (i == 4) r.copy(rpm = 4000.0) else r }, 5000, Source.LIVE))
-        assertNull(CalibrationCapture.capture(samples().mapIndexed { i, r -> if (i == 4) r.copy(source = Source.SIMULATION) else r }, 5000, Source.LIVE))
-        assertNull(CalibrationCapture.capture(samples().map { it.copy(clutchDisengaged = true) }, 5000, Source.LIVE))
+        assertNull(CalibrationCapture.capture(samples().take(4), 5000, Source.LIVE, 3))
+        assertNull(CalibrationCapture.capture(samples(), 9000, Source.LIVE, 3))
+        assertNull(CalibrationCapture.capture(samples().map { it.copy(kmh = 5.0) }, 5000, Source.LIVE, 3))
+        assertNull(CalibrationCapture.capture(samples().mapIndexed { i, r -> if (i == 4) r.copy(rpm = 4000.0) else r }, 5000, Source.LIVE, 3))
+        assertNull(CalibrationCapture.capture(samples().mapIndexed { i, r -> if (i == 4) r.copy(source = Source.SIMULATION) else r }, 5000, Source.LIVE, 3))
+        assertNull(CalibrationCapture.capture(samples().map { it.copy(clutchDisengaged = true) }, 5000, Source.LIVE, 3))
     }
     @Test fun `coaching considers load and trend and waits before suggesting up`() {
         val coach = Coach()
@@ -164,5 +164,53 @@ class DrivingTest {
             coach.advise(r, estimator.estimate(r, calibration, r.timestampMs), calibration, CoachingConfig(), r.timestampMs)
         }
         assertTrue(results.contains(Advice.FIRST))
+    }
+    private fun firstSamples(speed: Double = 8.0, rpm: Double = 960.0) =
+        samples().map { it.copy(kmh = speed, rpm = rpm) }
+    @Test fun `first calibrates at five mph without requiring higher speed or a thousand rpm`() {
+        val result = CalibrationCapture.assess(firstSamples(), 5000, Source.LIVE, 1)
+        assertTrue(result.ready)
+        assertEquals(120.0, result.ratio!!, 0.001)
+        assertFalse(CalibrationCapture.assess(firstSamples(), 5000, Source.LIVE, 2).ready)
+    }
+    @Test fun `stationary creeping engine off and invalid gear cannot calibrate first`() {
+        for ((speed, rpm) in listOf(0.0 to 850.0, 5.0 to 850.0, 8.0 to 0.0, 8.0 to 700.0))
+            assertNull(CalibrationCapture.capture(firstSamples(speed, rpm), 5000, Source.LIVE, 1))
+        for (gear in listOf(0, 7)) assertNull(CalibrationCapture.capture(firstSamples(), 5000, Source.LIVE, gear))
+    }
+    @Test fun `capture requires five actual seconds of readings and not just a sample count`() {
+        val tooShort = firstSamples().dropLast(1)
+        val assessment = CalibrationCapture.assess(tooShort, 4500, Source.LIVE, 1)
+        assertFalse(assessment.ready)
+        assertTrue(assessment.message.contains("4/5 seconds"))
+        val slowerPolling = firstSamples().filterIndexed { index, _ -> index % 2 == 0 }
+        assertTrue(CalibrationCapture.assess(slowerPolling, 5000, Source.LIVE, 1).ready)
+    }
+    @Test fun `low speed capture rejects shifting slipping clutch and speed changes`() {
+        val baseline = firstSamples()
+        val variations = listOf(
+            baseline.mapIndexed { i, r -> if (i == 5) r.copy(rpm = 1300.0) else r },
+            baseline.mapIndexed { i, r -> if (i == 5) r.copy(clutchDisengaged = true) else r },
+            baseline.mapIndexed { i, r -> if (i == 5) r.copy(synchronized = false) else r },
+            baseline.mapIndexed { i, r -> if (i == 5) r.copy(kmh = 10.0, rpm = 1200.0) else r },
+        )
+        variations.forEach { assertFalse(CalibrationCapture.assess(it, 5000, Source.LIVE, 1).ready) }
+    }
+    @Test fun `capture rejects nonfinite missing mixed source stale future and interrupted samples`() {
+        val baseline = firstSamples()
+        val variations = listOf(
+            baseline.map { it.copy(rpm = Double.NaN) }, baseline.map { it.copy(kmh = Double.POSITIVE_INFINITY) },
+            baseline.map { it.copy(rpm = null) }, baseline.map { it.copy(kmh = null) },
+            baseline.mapIndexed { i, r -> if (i == 5) r.copy(source = Source.SIMULATION) else r },
+            baseline.mapIndexed { i, r -> if (i >= 5) r.copy(timestampMs = r.timestampMs + 2000) else r },
+        )
+        variations.forEach { assertFalse(CalibrationCapture.assess(it, it.last().timestampMs, Source.LIVE, 1).ready) }
+        assertFalse(CalibrationCapture.assess(baseline, 9000, Source.LIVE, 1).ready)
+        assertFalse(CalibrationCapture.assess(baseline, 4000, Source.LIVE, 1).ready)
+        assertFalse(CalibrationCapture.assess(emptyList(), 0, Source.LIVE, 1).ready)
+    }
+    @Test fun `old manoeuvres stop blocking capture after a new stable window`() {
+        val older = firstSamples().map { it.copy(timestampMs = it.timestampMs - 10000, kmh = 0.0) }
+        assertTrue(CalibrationCapture.assess(older + firstSamples(), 5000, Source.LIVE, 1).ready)
     }
 }

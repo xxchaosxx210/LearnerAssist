@@ -150,8 +150,9 @@ private fun LearnerAssist(state: DashboardState, model: DashboardViewModel, conn
 }
 
 @Composable private fun SettingsScreen(s: DashboardState, model: DashboardViewModel) {
+    var confirmingGear by remember { mutableStateOf<Int?>(null) }
     Text("Lesson settings", style = MaterialTheme.typography.headlineMedium)
-    Text("Configure while parked. Live connection settings apply on the next connection.")
+    Text("Configure connection and coaching while parked. Calibration during a drive is for an instructor/passenger. Connection settings apply on the next connection.")
     val settings = s.settings
     Toggle("Simulation mode", s.simulation, model::setSimulation)
     SettingField("Vehicle profile", settings.vehicle) { model.updateSettings(settings.copy(vehicle = it)) }
@@ -179,15 +180,25 @@ private fun LearnerAssist(state: DashboardState, model: DashboardViewModel, conn
     Toggle("Save readings locally for review", settings.logging) { model.updateSettings(settings.copy(logging = it)) }
     Text("Logging is off by default. No location or account is collected. Local log is capped at approximately 1 MB; oldest data is cleared at the cap.")
     Text("Gear calibration", style = MaterialTheme.typography.titleLarge)
-    Text("No Ford ratios are assumed. An instructor/passenger selects the known gear after at least 5 seconds at a steady speed above 9 mph, clutch fully engaged. Capture at least two gears. Never operate these controls as the driver.")
+    Text("Instructor/passenger operation only. Confirm the known gear and keep the clutch fully engaged for at least 5 seconds of steady readings. First gear can be captured from 5 mph; gears 2–6 from 9.3 mph. These are measurement limits, not instructions to drive at a particular speed. Do not force a manoeuvre to meet them.")
+    Text("No Ford ratios are assumed. Capture first and second for second-to-first coaching; at least two distinct gears are needed for estimation. Stationary capture is unavailable. OBD cannot independently confirm clutch engagement or the selected gear.")
     (1..6).forEach { gear ->
         val ratio = settings.calibration.ratios[gear]
-        OutlinedButton(onClick = { model.captureGear(gear) }, enabled = !s.simulation && s.running, modifier = Modifier.fillMaxWidth()) {
+        val readiness = s.calibrationReadiness[gear]
+        Text("Gear $gear: ${if (s.simulation) "Live readings required" else readiness?.message ?: "Waiting for live readings"}", style = MaterialTheme.typography.bodySmall)
+        OutlinedButton(onClick = { confirmingGear = gear }, enabled = !s.simulation && s.running && readiness?.ready == true, modifier = Modifier.fillMaxWidth()) {
             Text("Capture gear $gear · ${ratio?.let { "%.1f rpm/(km/h)".format(Locale.UK, it) } ?: "Uncalibrated"}")
         }
     }
     Text(if (settings.calibration.valid()) "Vehicle calibration available" else "Gear estimation remains Unknown until calibration is valid.")
     OutlinedButton(onClick = { model.updateSettings(settings.copy(calibration = Calibration())) }) { Text("Clear vehicle calibration") }
+    confirmingGear?.let { gear ->
+        AlertDialog(onDismissRequest = { confirmingGear = null }, title = { Text("Confirm known gear $gear") },
+            text = { Text("I am the instructor/passenger. Gear $gear has been selected and the clutch fully engaged throughout the stable sample period. The app cannot verify either directly.") },
+            confirmButton = { TextButton(onClick = { confirmingGear = null; model.captureGear(gear) },
+                enabled = !s.simulation && s.running && s.calibrationReadiness[gear]?.ready == true) { Text("Confirm and capture") } },
+            dismissButton = { TextButton(onClick = { confirmingGear = null }) { Text("Cancel") } })
+    }
     Text("Diagnostic status", style = MaterialTheme.typography.titleLarge)
     Text(s.status); Text(s.diagnostic)
     Text("Approved requests: 0100, 010C, 010D, 0104. Temporary interface setup: ATI, ATE0, ATL0, ATH0, ATTP0. No command console or ECU modification functions.", style = MaterialTheme.typography.bodySmall)

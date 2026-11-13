@@ -66,4 +66,10 @@ class SimulationTest {
         compose.onNodeWithText("SIMULATED DATA").assertExists()
         compose.onNodeWithText("2").assertExists()
     }
+    @Test fun calibrationExplainsLowerFirstGearFloorAndBlocksSimulatedCapture() {
+        compose.onNodeWithText("Settings", useUnmergedTree = true).performClick()
+        compose.onNodeWithText("Instructor/passenger operation only.", substring = true).performScrollTo().assertExists()
+        compose.onNodeWithText("First gear can be captured from 5 mph", substring = true).assertExists()
+        compose.onNodeWithText("Capture gear 1 · Uncalibrated").performScrollTo().assertIsNotEnabled()
+    }
 }

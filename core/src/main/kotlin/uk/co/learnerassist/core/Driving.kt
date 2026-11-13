@@ -42,20 +42,44 @@ class GearEstimator {
     }
 }
 
+data class CalibrationReadiness(val message: String, val ratio: Double? = null) {
+    val ready: Boolean get() = ratio != null
+}
+
 object CalibrationCapture {
-    /** RPM per km/h; measured values, never factory ratios. */
-    fun capture(samples: List<Reading>, nowMs: Long, source: Source): Double? {
-        if (samples.size < 10 || samples.any { it.source != source || it.clutchDisengaged || !it.synchronized ||
-                it.rpm == null || it.kmh == null || it.kmh < 15 || it.rpm < 1000 }) return null
-        if (!samples.last().fresh(nowMs) || samples.last().timestampMs - samples.first().timestampMs < 4500) return null
-        if (samples.zipWithNext().any { (a, b) -> b.timestampMs - a.timestampMs !in 100..1500 }) return null
-        val speeds = samples.map { it.kmh!! }
-        if (speeds.max() - speeds.min() > 3) return null
-        val ratios = samples.map { it.rpm!! / it.kmh!! }.sorted()
+    /** Quality floors for measurements, not recommended driving speeds. */
+    fun minimumKmh(gear: Int) = if (gear == 1) 8.0 else 15.0
+    fun assess(samples: List<Reading>, nowMs: Long, source: Source, gear: Int): CalibrationReadiness {
+        fun waiting(message: String) = CalibrationReadiness(message)
+        if (gear !in 1..6) return waiting("Select a forward gear from 1 to 6")
+        val last = samples.lastOrNull() ?: return waiting("Waiting for live readings")
+        if (!last.fresh(nowMs)) return waiting("Waiting for fresh readings")
+        // Discard older history so a previous manoeuvre does not block a new capture.
+        val window = samples.filter { last.timestampMs - it.timestampMs <= 6000 }
+        if (window.any { it.source != source || it.clutchDisengaged || !it.synchronized ||
+                it.rpm == null || it.kmh == null || !it.rpm.isFinite() || !it.kmh.isFinite() })
+            return waiting("Readings uncertain; clutch must be fully engaged")
+        if (window.zipWithNext().any { (a, b) -> b.timestampMs - a.timestampMs !in 100..1500 })
+            return waiting("Waiting for continuous readings")
+        val minimumRpm = if (gear == 1) 800 else 1000
+        if (window.any { it.kmh!! < minimumKmh(gear) || it.rpm!! < minimumRpm || it.rpm > 6500 })
+            return waiting(if (gear == 1) "First gear needs steady readings at 5 mph or more, clutch fully engaged"
+                else "This gear needs steady readings at 9.3 mph or more, clutch fully engaged")
+        val speeds = window.map { it.kmh!! }
+        if (speeds.max() - speeds.min() > if (gear == 1) 1.0 else 3.0)
+            return waiting("Speed is changing; wait for steady progress")
+        val ratios = window.map { it.rpm!! / it.kmh!! }.sorted()
         val median = ratios[ratios.size / 2]
-        if (median !in 10.0..300.0 || ratios.any { abs(it - median) / median > 0.035 }) return null
-        return median
+        if (median !in 10.0..300.0 || ratios.any { abs(it - median) / median > 0.035 })
+            return waiting("RPM and speed do not form a stable ratio")
+        val elapsed = last.timestampMs - window.first().timestampMs
+        if (window.size < 6 || elapsed < 5000)
+            return waiting("Collecting steady readings: ${elapsed.coerceAtLeast(0) / 1000}/5 seconds")
+        return CalibrationReadiness("Ready — confirm the known gear and fully engaged clutch", median)
     }
+    /** RPM per km/h; measured values, never factory ratios. */
+    fun capture(samples: List<Reading>, nowMs: Long, source: Source, gear: Int): Double? =
+        assess(samples, nowMs, source, gear).ratio
 }
 
 enum class Advice(val text: String) {

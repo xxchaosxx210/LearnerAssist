@@ -17,6 +17,7 @@ data class DashboardState(
     val manualRpm: Double = 2000.0, val manualKmh: Double = 40.0, val manualLoad: Double = 30.0,
     val clutch: Boolean = false, val running: Boolean = false, val note: String = "",
     val review: List<String> = emptyList(),
+    val calibrationReadiness: Map<Int, CalibrationReadiness> = emptyMap(),
 )
 class DashboardViewModel(application: Application) : AndroidViewModel(application) {
     private val store = SettingsStore(application)
@@ -38,7 +39,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     fun background() { stop() }
     private fun clearSession() {
         estimator.reset(); coach.reset(); samples.clear(); audio.stop()
-        mutable.update { it.copy(reading = null, gear = null, advice = Advice.WAIT) }
+        mutable.update { it.copy(reading = null, gear = null, advice = Advice.WAIT, calibrationReadiness = emptyMap()) }
     }
     fun stop() {
         sessionGeneration++
@@ -138,7 +139,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 val reading = state.value.reading
                 if (reading != null && !reading.fresh(now())) {
                     estimator.reset(); coach.reset(); audio.stop(); samples.clear()
-                    mutable.update { it.copy(reading = null, gear = null, advice = Advice.WAIT, status = "Live session · readings stale") }
+                    mutable.update { it.copy(reading = null, gear = null, advice = Advice.WAIT, calibrationReadiness = emptyMap(), status = "Live session · readings stale") }
                 }
             }
         }
@@ -156,7 +157,10 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         val advice = coach.advise(reading, gear, calibration, s.settings.coaching, now())
         samples.addLast(reading)
         while (samples.size > 12) samples.removeFirst()
-        mutable.update { it.copy(reading = reading, gear = gear, advice = advice) }
+        val readiness = if (s.simulation) emptyMap() else (1..6).associateWith {
+            CalibrationCapture.assess(samples.toList(), now(), Source.LIVE, it)
+        }
+        mutable.update { it.copy(reading = reading, gear = gear, advice = advice, calibrationReadiness = readiness) }
         audio.speak(advice, s.settings, now())
         if (s.settings.logging && now() - lastLog >= 2000) {
             lastLog = now()
@@ -171,8 +175,10 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     }
     fun captureGear(gear: Int) {
         if (state.value.simulation) { mutable.update { it.copy(note = "Simulation uses demonstration ratios. Switch to live to record a vehicle calibration.") }; return }
-        val ratio = CalibrationCapture.capture(samples.toList(), now(), Source.LIVE)
-        if (ratio == null) { mutable.update { it.copy(note = "Capture needs at least 5 seconds of fresh, stable readings above 9 mph, clutch engaged. Instructor/passenger operation only.") }; return }
+        if (!state.value.running) { mutable.update { it.copy(note = "Connect the reader before capturing a gear.") }; return }
+        val assessment = CalibrationCapture.assess(samples.toList(), now(), Source.LIVE, gear)
+        val ratio = assessment.ratio
+        if (ratio == null) { mutable.update { it.copy(note = assessment.message) }; return }
         val settings = state.value.settings
         val updated = settings.calibration.ratios + (gear to ratio)
         val ordered = updated.toSortedMap().values.zipWithNext().all { (a, b) -> a > b * 1.18 }
