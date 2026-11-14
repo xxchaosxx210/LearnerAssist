@@ -13,6 +13,7 @@ data class DashboardState(
     val settings: Settings = Settings(), val simulation: Boolean = true,
     val status: String = "Simulation · no vehicle connection", val diagnostic: String = "No hardware accessed",
     val reading: Reading? = null, val gear: Int? = null, val advice: Advice = Advice.WAIT,
+    val coachingDecision: CoachingDecision = CoachingDecision(),
     val scenario: Scenario = Scenario.STEADY, val manual: Boolean = false,
     val manualRpm: Double = 2000.0, val manualKmh: Double = 40.0, val manualLoad: Double = 30.0,
     val clutch: Boolean = false, val running: Boolean = false, val note: String = "",
@@ -39,7 +40,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     fun background() { stop() }
     private fun clearSession() {
         estimator.reset(); coach.reset(); samples.clear(); audio.stop()
-        mutable.update { it.copy(reading = null, gear = null, advice = Advice.WAIT, calibrationReadiness = emptyMap()) }
+        mutable.update { it.copy(reading = null, gear = null, advice = Advice.WAIT, coachingDecision = CoachingDecision(), calibrationReadiness = emptyMap()) }
     }
     fun stop() {
         sessionGeneration++
@@ -75,9 +76,16 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             manualLoad = load ?: it.manualLoad, clutch = clutch ?: it.clutch) }
     }
     fun updateSettings(settings: Settings) {
-        store.save(settings); mutable.update { it.copy(settings = settings) }
-        if (!settings.audio) audio.stop()
-        estimator.reset(); coach.reset()
+        val previous = state.value.settings
+        val calibrationChanged = previous.calibration != settings.calibration
+        val coachingChanged = previous.coaching != settings.coaching
+        store.save(settings)
+        if (calibrationChanged) estimator.reset()
+        if (calibrationChanged || coachingChanged) coach.reset()
+        if (previous.audio != settings.audio || previous.volume != settings.volume || calibrationChanged || coachingChanged) audio.stop()
+        mutable.update { it.copy(settings = settings, gear = if (calibrationChanged) null else it.gear,
+            advice = if (calibrationChanged || coachingChanged) Advice.WAIT else it.advice,
+            coachingDecision = if (calibrationChanged || coachingChanged) CoachingDecision() else it.coachingDecision) }
     }
     fun permissionDenied() { mutable.update { it.copy(note = "Nearby Wi-Fi/local network permission is required. Enable it in Android app settings and retry.") } }
 
@@ -130,7 +138,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             } finally {
                 reader.close()
                 if (connection === reader) connection = null
-                if (sessionGeneration == generation) mutable.update { it.copy(running = false, reading = null, gear = null, advice = Advice.WAIT) }
+                if (sessionGeneration == generation) mutable.update { it.copy(running = false, reading = null, gear = null, advice = Advice.WAIT, coachingDecision = CoachingDecision(), calibrationReadiness = emptyMap()) }
             }
         }
         watchdog = viewModelScope.launch {
@@ -139,7 +147,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 val reading = state.value.reading
                 if (reading != null && !reading.fresh(now())) {
                     estimator.reset(); coach.reset(); audio.stop(); samples.clear()
-                    mutable.update { it.copy(reading = null, gear = null, advice = Advice.WAIT, calibrationReadiness = emptyMap(), status = "Live session · readings stale") }
+                    mutable.update { it.copy(reading = null, gear = null, advice = Advice.WAIT, coachingDecision = CoachingDecision(), calibrationReadiness = emptyMap(), status = "Live session · readings stale") }
                 }
             }
         }
@@ -152,19 +160,20 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             mutable.update { it.copy(status = "Live session · readings stale") }
             return
         }
-        val calibration = if (s.simulation) Simulator.calibration else s.settings.calibration
+        val calibration = if (s.simulation) Simulator.calibration else Calibration(s.settings.calibration.ratios.filterKeys { it in 1..5 })
         val gear = estimator.estimate(reading, calibration, now())
-        val advice = coach.advise(reading, gear, calibration, s.settings.coaching, now())
+        val decision = coach.evaluate(reading, gear, calibration, s.settings.coaching, now())
+        val advice = decision.advice
         samples.addLast(reading)
         while (samples.size > 12) samples.removeFirst()
-        val readiness = if (s.simulation) emptyMap() else (1..6).associateWith {
+        val readiness = if (s.simulation) emptyMap() else (1..5).associateWith {
             CalibrationCapture.assess(samples.toList(), now(), Source.LIVE, it)
         }
-        mutable.update { it.copy(reading = reading, gear = gear, advice = advice, calibrationReadiness = readiness) }
-        audio.speak(advice, s.settings, now())
+        mutable.update { it.copy(reading = reading, gear = gear, advice = advice, coachingDecision = decision, calibrationReadiness = readiness) }
+        audio.speak(decision, s.settings, now())
         if (s.settings.logging && now() - lastLog >= 2000) {
             lastLog = now()
-            val line = "${System.currentTimeMillis()},${reading.source},${reading.rpm},${reading.kmh},${reading.load},${gear ?: "Unknown"},${advice.name}\n"
+            val line = "${System.currentTimeMillis()},${reading.source},${reading.rpm},${reading.kmh},${reading.load},${gear ?: "Unknown"},${advice.name},${decision.suggestedGear ?: "None"}\n"
             viewModelScope.launch(Dispatchers.IO) {
                 runCatching {
                     if (log.length() > 1_000_000) log.writeText("")

@@ -21,6 +21,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.testTag
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import uk.co.learnerassist.core.*
 import java.util.Locale
@@ -87,36 +88,39 @@ private fun LearnerAssist(state: DashboardState, model: DashboardViewModel, conn
 @Composable private fun rememberSaveableState(): MutableState<Int> = androidx.compose.runtime.saveable.rememberSaveable { mutableIntStateOf(0) }
 
 @Composable private fun Dashboard(s: DashboardState, model: DashboardViewModel, connect: () -> Unit) {
-    Text("A calmer way to learn", style = MaterialTheme.typography.headlineMedium)
+    Text("Your next gear, calmly.", style = MaterialTheme.typography.headlineMedium)
     Surface(color = if (s.simulation) Color(0xFF51452E) else Color(0xFF224B40), shape = MaterialTheme.shapes.medium) {
         Column(Modifier.fillMaxWidth().padding(14.dp)) {
             Text(if (s.simulation) "SIMULATED DATA" else if (s.reading == null) "LIVE MODE · NO CURRENT DATA" else "LIVE ECU DATA · READ ONLY", fontWeight = FontWeight.Bold)
             Text(s.status, style = MaterialTheme.typography.bodySmall)
         }
     }
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.fillMaxWidth().padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("ENGINE SPEED", style = MaterialTheme.typography.labelLarge)
-            Text(s.reading?.rpm?.let { "%.0f".format(Locale.UK, it) } ?: "—", fontSize = 72.sp, fontWeight = FontWeight.Light)
-            Text("rpm", color = MaterialTheme.colorScheme.primary)
-            Spacer(Modifier.height(18.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                Metric("SPEED", s.reading?.mph?.let { "%.0f mph".format(Locale.UK, it) } ?: "—")
-                Metric("EST. GEAR", s.gear?.toString() ?: "—")
-            }
-            Spacer(Modifier.height(16.dp))
-            Text("Engine load: ${s.reading?.load?.let { "%.0f%%".format(Locale.UK, it) } ?: "Unavailable"}")
-        }
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Card(Modifier.weight(1f)) { Column(Modifier.padding(16.dp)) { Metric("SPEED", s.reading?.mph?.let { "%.0f mph".format(Locale.UK, it) } ?: "—") } }
+        Card(Modifier.weight(1f)) { Column(Modifier.padding(16.dp)) { Metric("ENGINE RPM", s.reading?.rpm?.let { "%.0f".format(Locale.UK, it) } ?: "—") } }
     }
     Surface(shape = MaterialTheme.shapes.large, color = Color(0xFF243C37)) {
-        Column(Modifier.fillMaxWidth().padding(22.dp)) {
-            Text("${s.settings.coaching.mode.name.lowercase().replaceFirstChar { it.uppercase() }} coaching", style = MaterialTheme.typography.labelLarge)
+        Column(Modifier.fillMaxWidth().padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("SUGGESTED GEAR · ADVISORY", style = MaterialTheme.typography.labelLarge)
+            Text(s.coachingDecision.suggestedGear?.toString() ?: "—", Modifier.testTag("suggested-gear"), fontSize = 88.sp, fontWeight = FontWeight.Light)
+            Text(s.coachingDecision.message, style = MaterialTheme.typography.headlineSmall)
             Spacer(Modifier.height(8.dp))
-            Text(s.advice.text, style = MaterialTheme.typography.headlineSmall)
-            if (s.advice == Advice.FIRST) Text("For very slow progress if continuing. If stopping, follow your instructor's stopping routine.", style = MaterialTheme.typography.bodyMedium)
-            Text(if (s.simulation) "Demonstration gear ratios · not your vehicle calibration" else "Estimated from calibrated RPM / speed. Clutch and neutral are not directly sensed.", style = MaterialTheme.typography.bodySmall)
+            Text(s.coachingDecision.detail, style = MaterialTheme.typography.bodySmall)
         }
     }
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+        Text("ESTIMATED CURRENT GEAR", style = MaterialTheme.typography.labelLarge)
+        Text(s.gear?.toString() ?: "—", Modifier.testTag("estimated-gear"), fontSize = 30.sp)
+    }
+    Text("Engine load: ${s.reading?.load?.let { "%.0f%%".format(Locale.UK, it) } ?: "Unavailable"}", style = MaterialTheme.typography.bodySmall)
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        DrivingMode.entries.forEach { mode -> FilterChip(selected = s.settings.coaching.mode == mode,
+            onClick = { model.updateSettings(s.settings.copy(coaching = s.settings.coaching.copy(mode = mode))) },
+            label = { Text(mode.name.lowercase().replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.labelSmall) }) }
+    }
+    Toggle("Voice prompts", s.settings.audio) { model.updateSettings(s.settings.copy(audio = it)) }
+    if (s.settings.coaching.mode == DrivingMode.INDEPENDENT) Text("Routine voice and gear suggestions are off in Independent mode.", style = MaterialTheme.typography.bodySmall)
+    Text(if (s.simulation) "Demonstration gear ratios · not your vehicle calibration" else "Calibrated estimates; clutch and neutral are not directly sensed.", style = MaterialTheme.typography.bodySmall)
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         if (s.simulation) Button(onClick = { if (s.running) model.stop() else model.foreground() }) { Text(if (s.running) "Pause demo" else "Resume demo") }
         else if (s.running) Button(onClick = model::stop) { Text("Disconnect") }
@@ -169,8 +173,21 @@ private fun LearnerAssist(state: DashboardState, model: DashboardViewModel, conn
         }
     }
     Text("Intermediate waits longer and prompts less often. Independent keeps readings and logs with minimal assistance.")
-    ValueSlider("Upshift sensitivity (RPM)", settings.coaching.upRpm.toFloat(), 1800f..4000f) {
+    Text("Five-speed instructor profile", style = MaterialTheme.typography.titleMedium)
+    Text("Speed ranges are teaching guides, not compulsory change points. Load, trend and predicted revs can suppress a suggestion.")
+    settings.coaching.profile.boundariesMph.forEachIndexed { index, boundary ->
+        val boundaries = settings.coaching.profile.boundariesMph
+        val lower = if (index == 0) 3.0 else boundaries[index - 1] + 3
+        val upper = if (index == 3) 90.0 else boundaries[index + 1] - 3
+        ValueSlider("Gear ${index + 1} → ${index + 2} guide (mph)", boundary.toFloat(), lower.toFloat()..upper.toFloat()) { value ->
+            val updated = boundaries.toMutableList().apply { set(index, value.toInt().toDouble().coerceIn(lower, upper)) }
+            model.updateSettings(settings.copy(coaching = settings.coaching.copy(profile = TeachingProfile(updated))))
+        }
+    }
+    ValueSlider("Usual upshift band starts (RPM)", settings.coaching.upRpm.toFloat(), 1500f..2700f) {
         model.updateSettings(settings.copy(coaching = settings.coaching.copy(upRpm = it.toInt()))) }
+    ValueSlider("Usual upshift band ends (RPM)", settings.coaching.maxShiftRpm.toFloat(), 3000f..4500f) {
+        model.updateSettings(settings.copy(coaching = settings.coaching.copy(maxShiftRpm = it.toInt()))) }
     ValueSlider("Downshift sensitivity (RPM)", settings.coaching.downRpm.toFloat(), 900f..1600f) {
         model.updateSettings(settings.copy(coaching = settings.coaching.copy(downRpm = it.toInt()))) }
     ValueSlider("Minimum prompt interval (seconds)", settings.coaching.intervalSeconds.toFloat(), 10f..60f) {
@@ -184,9 +201,9 @@ private fun LearnerAssist(state: DashboardState, model: DashboardViewModel, conn
         else if (!s.running) "Reader disconnected — reconnect on Drive"
         else "Live readings: ${s.reading?.mph?.let { "%.1f mph".format(Locale.UK, it) } ?: "Waiting for speed"} · ${s.reading?.rpm?.let { "%.0f rpm".format(Locale.UK, it) } ?: "Waiting for RPM"}",
         color = MaterialTheme.colorScheme.primary)
-    Text("Instructor/passenger operation only. Confirm the known gear and keep the clutch fully engaged for at least 5 seconds of steady readings. First gear can be captured from 5 mph; gears 2–6 from 9.3 mph. These are measurement limits, not instructions to drive at a particular speed. Do not force a manoeuvre to meet them.")
+    Text("Instructor/passenger operation only. Confirm the known gear and keep the clutch fully engaged for at least 5 seconds of steady readings. First gear can be captured from 5 mph; gears 2–5 from 9.3 mph. These are measurement limits, not instructions to drive at a particular speed. Do not force a manoeuvre to meet them.")
     Text("No Ford ratios are assumed. Capture first and second for second-to-first coaching; at least two distinct gears are needed for estimation. Stationary capture is unavailable. OBD cannot independently confirm clutch engagement or the selected gear.")
-    (1..6).forEach { gear ->
+    (1..5).forEach { gear ->
         val ratio = settings.calibration.ratios[gear]
         val readiness = s.calibrationReadiness[gear]
         Text("Gear $gear: ${if (s.simulation) "Live readings required" else readiness?.message ?: "Waiting for live readings"}", style = MaterialTheme.typography.bodySmall)
@@ -210,7 +227,7 @@ private fun LearnerAssist(state: DashboardState, model: DashboardViewModel, conn
 
 @Composable private fun ReviewScreen(s: DashboardState, model: DashboardViewModel) {
     Text("Lesson review", style = MaterialTheme.typography.headlineMedium)
-    Text("Last 20 saved samples · time, source, RPM, km/h, load, estimated gear, advice. Simulation and live samples are labelled separately.")
+    Text("Last 20 saved samples · time, source, RPM, km/h, load, estimated gear, advice, suggested gear. Older rows may omit suggested gear. Simulation and live samples are labelled separately.")
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Button(onClick = model::review) { Text("Refresh") }
         OutlinedButton(onClick = model::deleteLog) { Text("Delete log") }

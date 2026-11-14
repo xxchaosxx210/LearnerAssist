@@ -107,76 +107,11 @@ enum class Advice(val text: String) {
     FIRST("Consider first gear if continuing"),
     OBSERVE("Observe driving information"), WAIT("Waiting for fresh readings")
 }
-data class CoachingConfig(val mode: DrivingMode = DrivingMode.BEGINNER, val upRpm: Int = 2600, val downRpm: Int = 1250, val intervalSeconds: Int = 15)
-class Coach {
-    private var previous: Reading? = null
-    private var pending = Advice.UNKNOWN
-    private var pendingSince = 0L
-    private var lastPrompt = Long.MIN_VALUE / 2
-    private var lastAction: Advice? = null
-    private var lastSecondAt: Long? = null
-    fun reset() { previous = null; pending = Advice.UNKNOWN; pendingSince = 0; lastPrompt = Long.MIN_VALUE / 2; lastAction = null; lastSecondAt = null }
-    fun advise(r: Reading, gear: Int?, calibration: Calibration, config: CoachingConfig, now: Long): Advice {
-        val old = previous
-        previous = r
-        fun suppress(advice: Advice): Advice {
-            pending = advice; pendingSince = now
-            return advice
-        }
-        if (!r.fresh(now) || !r.synchronized || r.rpm == null || r.kmh == null ||
-            !r.rpm.isFinite() || !r.kmh.isFinite()) {
-            lastSecondAt = null
-            return suppress(Advice.WAIT)
-        }
-        if (old?.source != r.source) lastSecondAt = null
-        if (config.mode == DrivingMode.INDEPENDENT) return suppress(Advice.OBSERVE)
-        if (r.rpm < 500 || r.clutchDisengaged) { lastSecondAt = null; return suppress(Advice.UNKNOWN) }
-        if (r.kmh < 2) { lastSecondAt = null; return suppress(Advice.PREPARE) }
-        if (gear == 2) lastSecondAt = now
-        else if (gear != null) lastSecondAt = null
-        val dt = if (old == null) 0.0 else (r.timestampMs - old.timestampMs) / 1000.0
-        if (dt !in 0.1..2.5 || old?.kmh == null || !old.fresh(now) || !old.synchronized || old.source != r.source)
-            return suppress(if (gear == null) Advice.UNKNOWN else Advice.MAINTAIN)
-        val acceleration = (r.kmh - old.kmh) / dt / 3.6
-        val secondRatio = calibration.ratios[2]
-        val firstRatio = calibration.ratios[1]
-        // A recent second-gear observation may support a conditional prompt below the
-        // estimator's speed floor; it never becomes a claimed current gear.
-        val recentSecond = lastSecondAt?.let { now - it in 0..4000 } == true
-        val secondStillPlausible = secondRatio != null && r.kmh >= 8 &&
-            abs(r.rpm / r.kmh - secondRatio) / secondRatio <= 0.075
-        val firstCandidate = calibration.valid() && firstRatio != null && secondStillPlausible &&
-            (gear == 2 || (gear == null && recentSecond)) && r.kmh <= 12 &&
-            r.rpm in 800.0..config.downRpm.toDouble() && acceleration in -1.0..0.1 &&
-            r.kmh * firstRatio in 900.0..1800.0
-        if (!firstCandidate && (gear == null || r.load == null)) return suppress(Advice.UNKNOWN)
-        val desired = when {
-            firstCandidate -> Advice.FIRST
-            r.rpm > config.upRpm && r.load!! < 65 && acceleration in -0.1..1.5 && calibration.ratios.containsKey(gear!! + 1) -> Advice.UP
-            r.rpm < config.downRpm && r.kmh > 12 && r.load!! > 45 && acceleration < 0.3 && gear!! > 2 -> Advice.DOWN
-            else -> Advice.MAINTAIN
-        }
-        if (desired != pending) { pending = desired; pendingSince = now }
-        if (desired == Advice.MAINTAIN) {
-            if (now - pendingSince >= 4000) lastAction = null
-            return desired
-        }
-        val dwell = if (config.mode == DrivingMode.INTERMEDIATE) 5000 else 3000
-        val interval = config.intervalSeconds.coerceAtLeast(10) * 1000L * if (config.mode == DrivingMode.INTERMEDIATE) 2 else 1
-        // Hold a confirmed suggestion briefly so it can be read, while conditions still agree.
-        if (lastAction == desired && now - lastPrompt < 4000) return desired
-        if (now - pendingSince < dwell || now - lastPrompt < interval || lastAction == desired)
-            return if (gear == null) Advice.UNKNOWN else Advice.MAINTAIN
-        lastPrompt = now
-        lastAction = desired
-        return desired
-    }
-}
-
 enum class Scenario(val title: String) {
     MOVING_OFF("Moving away"), ACCELERATING("Through the gears"), STEADY("Steady at 30 mph"),
     JUNCTION("Slowing for a junction"), STOPPING("Approaching a stop"), SECOND_TO_FIRST("Second to first · slow progress"),
-    STRUGGLING("Low RPM, high load"), CLUTCH("Clutch disengaged")
+    STRUGGLING("Low RPM, high load"), CLUTCH("Clutch disengaged"),
+    SUGGEST_THIRD("Consider third gear"), HIGH_LOAD("High load · suggestion paused")
 }
 object Simulator {
     // Educational fixture only. Kept separate from the user's live calibration.
@@ -195,6 +130,8 @@ object Simulator {
             }
             Scenario.STRUGGLING -> Triple(26.0, 40.0, 78.0)
             Scenario.CLUTCH -> Triple(40.0, 23.0, 12.0)
+            Scenario.SUGGEST_THIRD -> Triple(26 * 1.609344, 78.0, 28.0)
+            Scenario.HIGH_LOAD -> Triple(26 * 1.609344, 78.0, 86.0)
         }
         return Reading((speed * ratio).coerceAtLeast(850.0), speed, load, now, Source.SIMULATION, scenario == Scenario.CLUTCH)
     }

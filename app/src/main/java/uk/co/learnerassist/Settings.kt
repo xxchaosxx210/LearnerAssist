@@ -20,7 +20,11 @@ class SettingsStore(context: Context) {
         }.toMap()),
         coaching = CoachingConfig(
             mode = DrivingMode.entries.firstOrNull { it.name == prefs.getString("mode", "BEGINNER") } ?: DrivingMode.BEGINNER,
-            upRpm = prefs.getInt("up", 2600).coerceIn(1800, 4000),
+            upRpm = prefs.getInt("shiftMin", 2000).coerceIn(1500, 2700),
+            maxShiftRpm = prefs.getInt("shiftMax", 3000).coerceIn(3000, 4500),
+            profile = TeachingProfile((1..4).mapIndexed { index, gear ->
+                prefs.getFloat("speedGuide$gear", listOf(10f, 25f, 35f, 50f)[index]).toDouble()
+            }).let { if (it.valid()) it else TeachingProfile() },
             downRpm = prefs.getInt("down", 1250).coerceIn(900, 1600),
             intervalSeconds = prefs.getInt("interval", 15).coerceIn(10, 60)),
         audio = prefs.getBoolean("audio", false), volume = prefs.getFloat("volume", 0.5f).coerceIn(0f, 1f),
@@ -29,7 +33,8 @@ class SettingsStore(context: Context) {
         prefs.edit().apply {
             putString("ssid", settings.ssid); putString("host", settings.host); putString("port", settings.port)
             putString("vehicle", settings.vehicle); putString("mode", settings.coaching.mode.name)
-            putInt("up", settings.coaching.upRpm); putInt("down", settings.coaching.downRpm)
+            putInt("shiftMin", settings.coaching.upRpm); putInt("shiftMax", settings.coaching.maxShiftRpm); putInt("down", settings.coaching.downRpm)
+            settings.coaching.profile.boundariesMph.forEachIndexed { index, value -> putFloat("speedGuide${index + 1}", value.toFloat()) }
             putInt("interval", settings.coaching.intervalSeconds); putBoolean("audio", settings.audio)
             putFloat("volume", settings.volume); putBoolean("logging", settings.logging)
             (1..6).forEach { putString("ratio$it", settings.calibration.ratios[it]?.toString()) }
