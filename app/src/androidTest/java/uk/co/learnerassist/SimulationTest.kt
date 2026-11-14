@@ -26,7 +26,7 @@ class SimulationTest {
         compose.onNodeWithText("Clutch disengaged").performScrollTo().performClick()
         compose.onNodeWithText("✓ Clutch disengaged").assertExists()
         compose.onNodeWithText("Drive", useUnmergedTree = true).performClick()
-        compose.onNodeWithText("Unknown").assertExists()
+        compose.onNodeWithText("—").assertExists()
     }
     @Test fun settingsPersistAndAudioDefaultsOff() {
         val store = SettingsStore(compose.activity)

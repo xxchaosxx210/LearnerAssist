@@ -1,5 +1,9 @@
 # Validation record — 13 November 2026
 
+## Display follow-up — 14 November 2026
+
+Replaced the dashboard's Unknown selected-gear text with an em dash, and updated the calibration explanation and existing clutch-uncertainty UI test. Estimation/uncertainty rules and logs are unchanged. Build and Android lint succeeded; the updated APK was installed over USB. Ran only `SimulationTest#scenariosAndManualControlsAreAvailable`: **OK (1 test)** in 1.767 seconds, verifying the uncertain simulated gear displays a dash. No physical reader diagnostic was activated. Saved calibration remains vehicle-measured; first through fifth were present when inspected. Factory ratios for the exact UK vehicle/gearbox/tyre combination have not been verified and were not substituted.
+
 ## Environment and source inspection
 
 - Cloned `https://github.com/xxchaosxx210/LearnerAssist.git` into the existing, initially empty workspace `C:\Users\chaos\Documents\dev\LearnerAssist`. Repository contained only `.gitignore`; no existing app was overwritten.

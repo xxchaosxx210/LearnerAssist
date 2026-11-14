@@ -102,7 +102,7 @@ private fun LearnerAssist(state: DashboardState, model: DashboardViewModel, conn
             Spacer(Modifier.height(18.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                 Metric("SPEED", s.reading?.mph?.let { "%.0f mph".format(Locale.UK, it) } ?: "—")
-                Metric("EST. GEAR", s.gear?.toString() ?: "Unknown")
+                Metric("EST. GEAR", s.gear?.toString() ?: "—")
             }
             Spacer(Modifier.height(16.dp))
             Text("Engine load: ${s.reading?.load?.let { "%.0f%%".format(Locale.UK, it) } ?: "Unavailable"}")
@@ -194,7 +194,7 @@ private fun LearnerAssist(state: DashboardState, model: DashboardViewModel, conn
             Text("Capture gear $gear · ${ratio?.let { "%.1f rpm/(km/h)".format(Locale.UK, it) } ?: "Uncalibrated"}")
         }
     }
-    Text(if (settings.calibration.valid()) "Vehicle calibration available" else "Gear estimation remains Unknown until calibration is valid.")
+    Text(if (settings.calibration.valid()) "Vehicle calibration available" else "The gear display shows a dash until calibration is valid and readings are reliable.")
     OutlinedButton(onClick = { model.updateSettings(settings.copy(calibration = Calibration())) }) { Text("Clear vehicle calibration") }
     confirmingGear?.let { gear ->
         AlertDialog(onDismissRequest = { confirmingGear = null }, title = { Text("Confirm known gear $gear") },

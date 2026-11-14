@@ -6,6 +6,8 @@ A standalone native Android teaching aid for learner drivers in a manual car. Ko
 
 ## First version
 
+The dashboard uses **—** when the selected gear cannot be confidently determined. This is a display choice; it does not assume a gear or remove the uncertainty checks. Logs retain explicit Unknown values for review.
+
 - High-contrast dashboard: RPM, mph, load, estimated gear, calm advisory coaching, connection/source status.
 - Default simulation: eight scenarios plus adjustable RPM, speed, load and clutch uncertainty, including second-to-first slow progress.
 - Beginner, Intermediate and Independent modes; sensitivity and prompt interval settings.
