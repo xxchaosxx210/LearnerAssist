@@ -111,7 +111,8 @@ enum class Scenario(val title: String) {
     MOVING_OFF("Moving away"), ACCELERATING("Through the gears"), STEADY("Steady at 30 mph"),
     JUNCTION("Slowing for a junction"), STOPPING("Approaching a stop"), SECOND_TO_FIRST("Second to first · slow progress"),
     STRUGGLING("Low RPM, high load"), CLUTCH("Clutch disengaged"),
-    SUGGEST_THIRD("Consider third gear"), HIGH_LOAD("High load · suggestion paused")
+    SUGGEST_THIRD("Consider third gear"), HIGH_LOAD("High load · suggestion paused"),
+    FIRST_TO_SECOND("Light load · consider second")
 }
 object Simulator {
     // Educational fixture only. Kept separate from the user's live calibration.
@@ -132,6 +133,7 @@ object Simulator {
             Scenario.CLUTCH -> Triple(40.0, 23.0, 12.0)
             Scenario.SUGGEST_THIRD -> Triple(26 * 1.609344, 78.0, 28.0)
             Scenario.HIGH_LOAD -> Triple(26 * 1.609344, 78.0, 86.0)
+            Scenario.FIRST_TO_SECOND -> Triple(17.0, 120.0, 17.0)
         }
         return Reading((speed * ratio).coerceAtLeast(850.0), speed, load, now, Source.SIMULATION, scenario == Scenario.CLUTCH)
     }

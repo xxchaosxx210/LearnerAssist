@@ -183,4 +183,46 @@ class GearCoachingTest {
             coach.evaluate(r, estimator.estimate(r, Simulator.calibration, t), Simulator.calibration, CoachingConfig(), t) }
         assertEquals(3, decisions.last().suggestedGear)
     }
+    @Test fun `live screenshot first gear at 2037 rpm 17 kmh and 17 percent load suggests second`() {
+        val estimator = GearEstimator(); val coach = Coach(); val voice = VoicePromptPolicy()
+        val decisions = (0..12).map { i -> val t = i * 500L
+            val r = Reading(2037.0, 17.0, 17.0, t, Source.LIVE)
+            val estimated = estimator.estimate(r, calibration, t)
+            if (t >= 1500) assertEquals(1, estimated)
+            coach.evaluate(r, estimated, calibration, CoachingConfig(), t)
+        }
+        val decision = decisions.last()
+        assertEquals(2, decision.suggestedGear); assertEquals("Consider second gear", decision.message)
+        assertEquals(decision.message, voice.next(decision, true, CoachingConfig()))
+    }
+    @Test fun `first to second exception excludes higher demand and brisk acceleration`() {
+        for (load in listOf(26.0, 40.0, 86.0)) {
+            val coach = Coach()
+            (0..12).forEach { i -> val t = i * 500L
+                assertNull(coach.evaluate(Reading(2037.0, 17.0, load, t, Source.LIVE), 1, calibration, CoachingConfig(), t).suggestedGear)
+            }
+        }
+        val coach = Coach()
+        (0..8).forEach { i -> val t = i * 500L; val kmh = 17.0 + i * 1.0
+            val r = Reading(kmh * 126.9, kmh, 17.0, t, Source.LIVE)
+            val decision = coach.evaluate(r, 1, calibration, CoachingConfig(), t)
+            if (kmh * calibration.ratios.getValue(2) < 1350) assertNull(decision.suggestedGear)
+        }
+    }
+    @Test fun `light load never permits predicted second below a thousand or lowers other gear floors`() {
+        val coach = Coach(); val ratios = Calibration(calibration.ratios + (2 to 55.0))
+        (0..12).forEach { i -> val t = i * 500L
+            assertNull(coach.evaluate(Reading(2037.0, 17.0, 17.0, t, Source.LIVE), 1, ratios, CoachingConfig(), t).suggestedGear)
+        }
+        val config = CoachingConfig(upRpm = 1800, profile = TeachingProfile(listOf(10.0, 15.0, 35.0, 50.0)))
+        assertTrue(results(gear = 2, config = config, modify = { reading(it.timestampMs, 19.0, 2, 17.0) }).all { it.suggestedGear == null })
+    }
+    @Test fun `light load first to second simulator uses the real decision pipeline`() {
+        val estimator = GearEstimator(); val coach = Coach()
+        val decisions = (0..12).map { i -> val t = i * 500L
+            val r = Simulator.sample(Scenario.FIRST_TO_SECOND, i / 2.0, t)
+            coach.evaluate(r, estimator.estimate(r, Simulator.calibration, t), Simulator.calibration, CoachingConfig(), t)
+        }
+        assertEquals(2, decisions.last().suggestedGear)
+    }
 }

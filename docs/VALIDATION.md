@@ -1,5 +1,17 @@
 # Validation record — 13 November 2026
 
+## Light-load first-to-second exception — 14 November 2026
+
+The user's live screenshot showed rounded **11 mph**, **2,037 RPM**, **17% engine load**, and a predicted-target-revs rejection. The screenshot's Android volume overlay obscured the current-gear number. The code path nevertheless implied an accepted current estimate and a proposed adjacent change. Saved first/second ratios predict approximately **1,048 RPM** after a first-to-second change, below the general 1,350 RPM margin. This was a teaching-policy constraint, not evidence of a missing gear estimate or incorrect OBD readings.
+
+Implemented a narrow exception: only an upshift from known first to calibrated second, load at most 25%, acceleration between −0.1 and +0.5 m/s², and predicted second RPM at least 1,000. Greater demand, brisk acceleration and other upshifts keep the existing low-RPM-sensitivity-plus-100 margin. All calibration, speed-guide, current-RPM, dwell, prompt-gap, stale-data, uncertainty, maximum-target-RPM and read-only checks remain. The lower bound is an advisory software teaching setting, not a verified Ford engine operating limit. Rejections now report predicted RPM, target gear and the permitted teaching range rather than only a generic message.
+
+Added **Light load · consider second** simulation and a matching native UI test. Core tests cover the exact screenshot values using in-memory readings and the user's saved-ratio approximations: first is estimated and second is suggested after the normal checks, with matching voice text. Other regressions ensure the exception cannot bypass higher-load/brisk-acceleration rules, permit a sub-1,000-RPM second or lower higher-gear floors. A brisk-acceleration assertion was refined to permit ordinary upshifts once predicted RPM rises above the normal margin; the test specifically guards against using the lower exception during brisk acceleration.
+
+Local build, test APK and lint succeeded: **62 core tests passed / 0 failures**. The user confirmed safely parked before installation; no physical-reader diagnostic was enabled during verification. Actual road suitability of the lower-load teaching rule remains to be assessed by an instructor/passenger.
+
+Both APK installs returned Success. Explicitly ran only `SimulationTest`: **OK (9 tests)** in **32.307 seconds**, including estimated first plus suggested second for the new light-load simulator. Lint: **0 errors / 9 warnings**. The suite retained personal calibration and settings; reopened the app in default simulation. Live connection must be deliberately re-enabled.
+
 ## Responsive prompts — 14 November 2026
 
 The user reported a 20–30 second fifth-gear prompt delay while above 50 mph in fourth. Read saved preferences: Beginner, 15-second minimum gap, voice enabled. Code had independent 15-second coaching and voice cooldowns and required 51 mph for the nominal 50 mph upshift guide. These were verified possible delay sources; the complete driving sequence was not logged, so load/trend/uncertainty contributions cannot be reconstructed.

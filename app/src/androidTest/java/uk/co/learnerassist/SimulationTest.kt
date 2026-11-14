@@ -128,4 +128,12 @@ class SimulationTest {
         compose.onNodeWithTag("suggested-gear").assertTextEquals("—")
         compose.onNodeWithTag("estimated-gear").assertTextEquals("2")
     }
+    @Test fun lightLoadFirstGearCanSuggestSecond() {
+        compose.onNodeWithText("Simulator", useUnmergedTree = true).performClick()
+        compose.onNodeWithText("Light load · consider second").performScrollTo().performClick()
+        compose.onNodeWithText("Drive", useUnmergedTree = true).performClick()
+        compose.waitUntil(10000) { compose.onAllNodesWithText("Consider second gear").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("estimated-gear").assertTextEquals("1")
+        compose.onNodeWithTag("suggested-gear").assertTextEquals("2")
+    }
 }

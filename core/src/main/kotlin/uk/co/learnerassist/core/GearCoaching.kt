@@ -110,10 +110,20 @@ class Coach {
         val targetRatio = calibration.ratios[target]
             ?: return suppress("Calibrate gear $target", detail = "A target gear needs its own saved ratio before it can be suggested.")
         val predictedRpm = if (currentRatio != null) r.rpm * targetRatio / currentRatio else r.kmh * targetRatio
-        val minimum = if (target == 1) 900.0 else if (action == Advice.UP) (config.downRpm + 100).toDouble() else 1000.0
+        // First-to-second has a much wider ratio step in this calibrated car.
+        // Permit a lower predicted RPM only for gentle, light-load progress;
+        // other gears and greater demand keep the normal anti-lugging margin.
+        val lightLoadFirstUpshift = action == Advice.UP && gear == 1 && target == 2 &&
+            r.load != null && r.load <= 25 && acceleration in -0.1..0.5
+        val minimum = when {
+            target == 1 -> 900.0
+            lightLoadFirstUpshift -> 1000.0
+            action == Advice.UP -> (config.downRpm + 100).toDouble()
+            else -> 1000.0
+        }
         val maximum = if (target == 1) minOf(2000, config.maxShiftRpm).toDouble() else config.maxShiftRpm.toDouble()
         if (predictedRpm !in minimum..maximum)
-            return suppress("Suggestion paused", detail = "Predicted revs in the next gear are outside the teaching limits.")
+            return suppress("Suggestion paused", detail = "Predicted ${predictedRpm.toInt()} RPM in gear $target; teaching range ${minimum.toInt()}–${maximum.toInt()} RPM.")
         if (pendingGear != target) { pendingGear = target; pendingSince = now }
         if (now - pendingSince < config.dwellMs)
             return CoachingDecision(Advice.WAIT, message = "Assessing gear suggestion", detail = "Waiting for the same conditions to remain stable.")
@@ -123,6 +133,7 @@ class Coach {
         val name = listOf("", "first", "second", "third", "fourth", "fifth")[target]
         return CoachingDecision(action, target, if (target == 1) "Consider first gear if continuing" else "Consider $name gear",
             if (target == 1) "If stopping, follow your instructor’s stopping routine."
+            else if (lightLoadFirstUpshift) "For gentle, light-load progress. Instructor judgement and road conditions take priority."
             else "When appropriate for the road ahead. Instructor judgement takes priority.")
     }
 }
