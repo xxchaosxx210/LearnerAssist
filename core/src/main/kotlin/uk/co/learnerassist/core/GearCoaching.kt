@@ -9,13 +9,13 @@ data class TeachingProfile(val boundariesMph: List<Double> = listOf(10.0, 25.0, 
 }
 data class CoachingConfig(
     val mode: DrivingMode = DrivingMode.BEGINNER, val upRpm: Int = 2000,
-    val downRpm: Int = 1250, val intervalSeconds: Int = 15,
+    val downRpm: Int = 1250, val intervalSeconds: Int = 3,
     val maxShiftRpm: Int = 3000, val profile: TeachingProfile = TeachingProfile(),
 ) {
     fun valid() = profile.valid() && upRpm in 1500..3500 && maxShiftRpm in 2000..4500 &&
-        maxShiftRpm - upRpm >= 300 && downRpm in 900..1600 && intervalSeconds in 10..60
-    val dwellMs get() = if (mode == DrivingMode.INTERMEDIATE) 5000L else 3000L
-    val intervalMs get() = intervalSeconds.coerceAtLeast(10) * 1000L * if (mode == DrivingMode.INTERMEDIATE) 2 else 1
+        maxShiftRpm - upRpm >= 300 && downRpm in 900..1600 && intervalSeconds in 1..60
+    val dwellMs get() = if (mode == DrivingMode.INTERMEDIATE) 3000L else 1500L
+    val intervalMs get() = intervalSeconds.coerceAtLeast(1) * 1000L * if (mode == DrivingMode.INTERMEDIATE) 2 else 1
 }
 data class CoachingDecision(
     val advice: Advice = Advice.WAIT, val suggestedGear: Int? = null,
@@ -87,7 +87,9 @@ class Coach {
         var target: Int? = if (firstCandidate) 1 else null
         var action = if (firstCandidate) Advice.FIRST else Advice.MAINTAIN
         if (!firstCandidate && gear != null) {
-            val bandWantsUp = gear < 5 && mph >= config.profile.boundariesMph[gear - 1] + 1
+            // Start at the instructor's boundary. Keep the reverse downshift
+            // boundary 1 mph lower rather than delaying the upshift by 1 mph.
+            val bandWantsUp = gear < 5 && mph >= config.profile.boundariesMph[gear - 1]
             val bandWantsDown = gear > 2 && mph <= config.profile.boundariesMph[gear - 2] - 1
             when {
                 gear < 5 && r.rpm >= config.upRpm && (bandWantsUp || r.rpm > config.maxShiftRpm) &&
@@ -125,16 +127,15 @@ class Coach {
     }
 }
 
-/** Shared, testable voice timing. Same text as the displayed, confirmed decision. */
+/** Dedupe only: Coach is the single timing gate for confirmed screen/voice changes. */
 class VoicePromptPolicy {
     private var lastText: String? = null
-    private var lastAt = Long.MIN_VALUE / 2
-    fun reset() { lastText = null; lastAt = Long.MIN_VALUE / 2 }
-    fun next(decision: CoachingDecision, enabled: Boolean, config: CoachingConfig, now: Long): String? {
+    fun reset() { lastText = null }
+    fun next(decision: CoachingDecision, enabled: Boolean, config: CoachingConfig): String? {
         if (!enabled || config.mode == DrivingMode.INDEPENDENT || !config.valid()) return null
         val text = decision.speech ?: return null
-        if (text == lastText || now - lastAt < config.intervalMs) return null
-        lastText = text; lastAt = now
+        if (text == lastText) return null
+        lastText = text
         return text
     }
 }

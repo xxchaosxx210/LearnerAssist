@@ -19,18 +19,18 @@ class GearCoachingTest {
     }
     @Test fun `26 mph in second suggests third with exact matching voice text after dwell`() {
         val decisions = results()
-        assertTrue(decisions.take(7).all { it.suggestedGear == null })
+        assertTrue(decisions.take(4).all { it.suggestedGear == null })
         val suggestion = decisions.last()
         assertEquals(3, suggestion.suggestedGear); assertEquals(Advice.UP, suggestion.advice)
         assertEquals("Consider third gear", suggestion.message); assertEquals(suggestion.message, suggestion.speech)
     }
     @Test fun `suggestion stays visible while conditions agree rather than flashing briefly`() {
-        assertTrue(results(count = 60).drop(7).all { it.suggestedGear == 3 })
+        assertTrue(results(count = 60).drop(4).all { it.suggestedGear == 3 })
     }
     @Test fun `intermediate requires a longer stable period than beginner`() {
-        assertEquals(3, results(count = 8).last().suggestedGear)
-        assertNull(results(config = CoachingConfig(mode = DrivingMode.INTERMEDIATE), count = 8).last().suggestedGear)
-        assertEquals(3, results(config = CoachingConfig(mode = DrivingMode.INTERMEDIATE), count = 12).last().suggestedGear)
+        assertEquals(3, results(count = 4).last().suggestedGear)
+        assertNull(results(config = CoachingConfig(mode = DrivingMode.INTERMEDIATE), count = 4).last().suggestedGear)
+        assertEquals(3, results(config = CoachingConfig(mode = DrivingMode.INTERMEDIATE), count = 8).last().suggestedGear)
     }
     @Test fun `independent suppresses suggested gear and all routine speech`() {
         results(config = CoachingConfig(mode = DrivingMode.INDEPENDENT)).forEach {
@@ -71,9 +71,11 @@ class GearCoachingTest {
         assertTrue(results(ratios = Calibration()).all { it.suggestedGear == null })
         assertTrue(results(gear = 3).all { it.suggestedGear == null })
     }
-    @Test fun `speed boundaries have a one mph dead band`() {
-        assertTrue(results(modify = { reading(it.timestampMs, 25.5) }).all { it.advice != Advice.UP && it.suggestedGear != 3 })
-        assertEquals(3, results(modify = { reading(it.timestampMs, 26.1) }).last().suggestedGear)
+    @Test fun `upshift starts at the guide while reverse downshift keeps a one mph dead band`() {
+        assertTrue(results(modify = { reading(it.timestampMs, 24.8) }).all { it.advice != Advice.UP && it.suggestedGear != 3 })
+        assertEquals(3, results(modify = { reading(it.timestampMs, 25.1) }).last().suggestedGear)
+        assertTrue(results(gear = 3, modify = { reading(it.timestampMs, 24.5, 3) }).all { it.advice != Advice.DOWN })
+        assertEquals(2, results(gear = 3, modify = { reading(it.timestampMs, 23.8, 3) }).last().suggestedGear)
     }
     @Test fun `slowing or steady low speed third can suggest second if predicted revs fit`() {
         val decision = results(gear = 3, modify = { reading(it.timestampMs, 20.0, 3) }).last()
@@ -119,30 +121,60 @@ class GearCoachingTest {
         val coach = Coach()
         (0..10).forEach { val t = it * 500L; coach.evaluate(reading(t), 2, calibration, CoachingConfig(), t) }
         assertNull(coach.evaluate(reading(5500).copy(clutchDisengaged = true), null, calibration, CoachingConfig(), 5500).suggestedGear)
-        (12..17).forEach { val t = it * 500L; assertNull(coach.evaluate(reading(t), 2, calibration, CoachingConfig(), t).suggestedGear) }
-        assertEquals(3, coach.evaluate(reading(10000), 2, calibration, CoachingConfig(), 10000).suggestedGear)
+        (12..15).forEach { val t = it * 500L; assertNull(coach.evaluate(reading(t), 2, calibration, CoachingConfig(), t).suggestedGear) }
+        assertEquals(3, coach.evaluate(reading(8000), 2, calibration, CoachingConfig(), 8000).suggestedGear)
         coach.reset(); assertNull(coach.evaluate(reading(10500), 2, calibration, CoachingConfig(), 10500).suggestedGear)
     }
     @Test fun `different suggestions respect minimum prompt intervals`() {
         val coach = Coach()
-        for (i in 0..10) { val t = i * 500L; coach.evaluate(reading(t), 2, calibration, CoachingConfig(), t) }
-        val later = (11..40).map { val t = it * 500L; coach.evaluate(reading(t, 20.0, 3), 3, calibration, CoachingConfig(), t) }
+        val config = CoachingConfig(intervalSeconds = 15)
+        for (i in 0..10) { val t = i * 500L; coach.evaluate(reading(t), 2, calibration, config, t) }
+        val later = (11..40).map { val t = it * 500L; coach.evaluate(reading(t, 20.0, 3), 3, calibration, config, t) }
         assertTrue(later.take(20).all { it.suggestedGear != 2 }); assertEquals(2, later.last().suggestedGear)
     }
-    @Test fun `voice uses displayed text and respects disabled independent duplicate and interval rules`() {
+    @Test fun `voice uses approved displayed text without adding a second timing gate`() {
         val voice = VoicePromptPolicy()
         val decision = results().last()
-        assertNull(voice.next(decision, false, CoachingConfig(), 0))
-        assertNull(voice.next(decision, true, CoachingConfig(mode = DrivingMode.INDEPENDENT), 0))
-        assertEquals(decision.message, voice.next(decision, true, CoachingConfig(), 0))
-        assertNull(voice.next(decision, true, CoachingConfig(), 60000))
+        assertNull(voice.next(decision, false, CoachingConfig()))
+        assertNull(voice.next(decision, true, CoachingConfig(mode = DrivingMode.INDEPENDENT)))
+        assertEquals(decision.message, voice.next(decision, true, CoachingConfig()))
+        assertNull(voice.next(decision, true, CoachingConfig()))
         val second = CoachingDecision(Advice.DOWN, 2, "Consider second gear")
-        voice.reset(); assertEquals(decision.message, voice.next(decision, true, CoachingConfig(), 0))
-        assertNull(voice.next(second, true, CoachingConfig(), 14000))
-        assertEquals(second.message, voice.next(second, true, CoachingConfig(), 15000))
-        voice.reset(); voice.next(decision, true, CoachingConfig(mode = DrivingMode.INTERMEDIATE), 0)
-        assertNull(voice.next(second, true, CoachingConfig(mode = DrivingMode.INTERMEDIATE), 29000))
-        assertEquals(second.message, voice.next(second, true, CoachingConfig(mode = DrivingMode.INTERMEDIATE), 30000))
+        assertEquals(second.message, voice.next(second, true, CoachingConfig()))
+        assertNull(voice.next(second, true, CoachingConfig()))
+        assertNull(voice.next(CoachingDecision(), true, CoachingConfig()))
+        assertNull(voice.next(CoachingDecision(Advice.MAINTAIN, 3), true, CoachingConfig()))
+        voice.reset(); assertEquals(decision.message, voice.next(decision, true, CoachingConfig()))
+    }
+    @Test fun `just over fifty in fourth offers fifth within two seconds once conditions support it`() {
+        val coach = Coach(); val voice = VoicePromptPolicy()
+        val decisions = (0..8).map { i -> val t = i * 500L
+            val decision = coach.evaluate(reading(t, 81.0 / 1.609344, 4), 4, calibration, CoachingConfig(), t)
+            t to decision }
+        val first = decisions.first { it.second.suggestedGear == 5 }
+        assertEquals(2000L, first.first)
+        assertEquals("Consider fifth gear", voice.next(first.second, true, CoachingConfig()))
+        assertTrue(decisions.take(4).all { it.second.suggestedGear == null })
+    }
+    @Test fun `a recent fourth prompt does not cause a fifteen second wait for fifth or its voice`() {
+        val coach = Coach(); val voice = VoicePromptPolicy(); var fourthSpoken = false
+        for (i in 0..8) { val t = i * 500L
+            val r = if (t <= 2000) reading(t, 45.0, 3) else reading(t, 46.0, 4)
+            val decision = coach.evaluate(r, if (t <= 2000) 3 else 4, calibration, CoachingConfig(), t)
+            if (voice.next(decision, true, CoachingConfig()) == "Consider fourth gear") fourthSpoken = true
+        }
+        assertTrue(fourthSpoken)
+        val firstFifth = (9..20).map { i -> val t = i * 500L
+            t to coach.evaluate(reading(t, 81.0 / 1.609344, 4), 4, calibration, CoachingConfig(), t)
+        }.first { it.second.suggestedGear == 5 }
+        assertTrue(firstFifth.first <= 7000)
+        assertEquals("Consider fifth gear", voice.next(firstFifth.second, true, CoachingConfig()))
+    }
+    @Test fun `responsive defaults keep intermediate less frequent and high load fifth suppressed`() {
+        assertEquals(1500L, CoachingConfig().dwellMs); assertEquals(3000L, CoachingConfig().intervalMs)
+        val intermediate = CoachingConfig(mode = DrivingMode.INTERMEDIATE)
+        assertEquals(3000L, intermediate.dwellMs); assertEquals(6000L, intermediate.intervalMs)
+        assertTrue(results(gear = 4, modify = { reading(it.timestampMs, 51.0, 4, 86.0) }).all { it.suggestedGear == null })
     }
     @Test fun `all scenarios are simulated and specific third example runs the full pipeline`() {
         for (scenario in Scenario.entries) assertEquals(Source.SIMULATION, Simulator.sample(scenario, 5.0, 5000).source)

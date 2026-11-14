@@ -170,7 +170,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             CalibrationCapture.assess(samples.toList(), now(), Source.LIVE, it)
         }
         mutable.update { it.copy(reading = reading, gear = gear, advice = advice, coachingDecision = decision, calibrationReadiness = readiness) }
-        audio.speak(decision, s.settings, now())
+        audio.speak(decision, s.settings)
         if (s.settings.logging && now() - lastLog >= 2000) {
             lastLog = now()
             val line = "${System.currentTimeMillis()},${reading.source},${reading.rpm},${reading.kmh},${reading.load},${gear ?: "Unknown"},${advice.name},${decision.suggestedGear ?: "None"}\n"

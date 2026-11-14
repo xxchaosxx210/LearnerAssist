@@ -1,5 +1,17 @@
 # Validation record — 13 November 2026
 
+## Responsive prompts — 14 November 2026
+
+The user reported a 20–30 second fifth-gear prompt delay while above 50 mph in fourth. Read saved preferences: Beginner, 15-second minimum gap, voice enabled. Code had independent 15-second coaching and voice cooldowns and required 51 mph for the nominal 50 mph upshift guide. These were verified possible delay sources; the complete driving sequence was not logged, so load/trend/uncertainty contributions cannot be reconstructed.
+
+Changed Beginner candidate dwell to 1.5 seconds and Intermediate to 3 seconds. The new `promptGapSeconds` preference defaults to 3 seconds (6 effective seconds in Intermediate) rather than inheriting the legacy 15-second default. Settings exposes the gap with a 1–60 second range. Coach is now the sole change-timing gate: voice deduplicates approved messages and enforces enabled/mode rules without starting another cooldown. Upshifts begin at the configured guide, with reverse downshift eligibility still 1 mph lower. Calibration, load, predicted-rev, continuity, uncertainty and read-only protections remain intact.
+
+Local `:core:test :app:assembleDebug :app:assembleDebugAndroidTest :app:lintDebug` passed: **58 JVM tests**, **0 failures**, lint **0 errors / 9 warnings**. New regressions check 81 km/h (about 50.3 mph) in calibrated fourth, fifth available after two seconds of suitable simulated samples, immediate matching speech after approval, no stale 15-second wait after an earlier fourth prompt, mode-dependent timing, continued repeat suppression and high-load suppression. These are controlled algorithm timings, not a guarantee of a prompt whenever actual road speed crosses 50 mph.
+
+The user initially confirmed still driving, so preparation/build/tests were laptop-only and no update was installed then. After explicit confirmation of being safely parked, both updated APKs were installed over USB, ending the old live session. The app still requires deliberate live reconnection after installation.
+
+Ran only `SimulationTest` with physical-reader diagnostics disabled: **OK (8 tests)** in **32.121 seconds**. The suite restores original calibration, endpoint and personal settings while saving the new responsive timing default. Actual road behaviour and audible latency of this timing update still need an instructor/passenger assessment.
+
 ## Display follow-up — 14 November 2026
 
 Replaced the dashboard's Unknown selected-gear text with an em dash, and updated the calibration explanation and existing clutch-uncertainty UI test. Estimation/uncertainty rules and logs are unchanged. Build and Android lint succeeded; the updated APK was installed over USB. Ran only `SimulationTest#scenariosAndManualControlsAreAvailable`: **OK (1 test)** in 1.767 seconds, verifying the uncertain simulated gear displays a dash. No physical reader diagnostic was activated. Saved calibration remains vehicle-measured; first through fifth were present when inspected. Factory ratios for the exact UK vehicle/gearbox/tyre combination have not been verified and were not substituted.

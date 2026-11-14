@@ -26,7 +26,7 @@ class SettingsStore(context: Context) {
                 prefs.getFloat("speedGuide$gear", listOf(10f, 25f, 35f, 50f)[index]).toDouble()
             }).let { if (it.valid()) it else TeachingProfile() },
             downRpm = prefs.getInt("down", 1250).coerceIn(900, 1600),
-            intervalSeconds = prefs.getInt("interval", 15).coerceIn(10, 60)),
+            intervalSeconds = prefs.getInt("promptGapSeconds", 3).coerceIn(1, 60)),
         audio = prefs.getBoolean("audio", false), volume = prefs.getFloat("volume", 0.5f).coerceIn(0f, 1f),
         logging = prefs.getBoolean("logging", false))
     fun save(settings: Settings) {
@@ -35,7 +35,7 @@ class SettingsStore(context: Context) {
             putString("vehicle", settings.vehicle); putString("mode", settings.coaching.mode.name)
             putInt("shiftMin", settings.coaching.upRpm); putInt("shiftMax", settings.coaching.maxShiftRpm); putInt("down", settings.coaching.downRpm)
             settings.coaching.profile.boundariesMph.forEachIndexed { index, value -> putFloat("speedGuide${index + 1}", value.toFloat()) }
-            putInt("interval", settings.coaching.intervalSeconds); putBoolean("audio", settings.audio)
+            putInt("promptGapSeconds", settings.coaching.intervalSeconds); putBoolean("audio", settings.audio)
             putFloat("volume", settings.volume); putBoolean("logging", settings.logging)
             (1..6).forEach { putString("ratio$it", settings.calibration.ratios[it]?.toString()) }
         }.apply()

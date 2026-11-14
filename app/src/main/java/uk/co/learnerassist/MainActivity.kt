@@ -190,7 +190,8 @@ private fun LearnerAssist(state: DashboardState, model: DashboardViewModel, conn
         model.updateSettings(settings.copy(coaching = settings.coaching.copy(maxShiftRpm = it.toInt()))) }
     ValueSlider("Downshift sensitivity (RPM)", settings.coaching.downRpm.toFloat(), 900f..1600f) {
         model.updateSettings(settings.copy(coaching = settings.coaching.copy(downRpm = it.toInt()))) }
-    ValueSlider("Minimum prompt interval (seconds)", settings.coaching.intervalSeconds.toFloat(), 10f..60f) {
+    Text("Beginner checks stable suggestions for 1.5 seconds; Intermediate for 3 seconds. New prompts use one shared screen/voice gap. Repeated identical voice prompts remain suppressed.")
+    ValueSlider("Minimum gap between new prompts (seconds)", settings.coaching.intervalSeconds.toFloat(), 1f..60f) {
         model.updateSettings(settings.copy(coaching = settings.coaching.copy(intervalSeconds = it.toInt()))) }
     Toggle("Spoken advisory prompts", settings.audio) { model.updateSettings(settings.copy(audio = it)) }
     ValueSlider("Voice volume (%)", settings.volume * 100f, 0f..100f) { model.updateSettings(settings.copy(volume = it / 100)) }
